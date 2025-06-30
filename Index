@@ -1,0 +1,843 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Check, AlertTriangle, Loader, Bell, BellRing, MessageCircle, 
+  Bot, User, Settings, ChevronRight, ChevronDown, ChevronUp, Search,
+  BarChart3, PieChart, TrendingUp, FileText, Calendar, DollarSign,
+  Users, Archive, HelpCircle, Zap, RefreshCw, AlertCircle, CheckCircle,
+  Info, Clock, Download, Eye, Play, Pause, Send, Minimize2, Maximize2,
+  Lock, Unlock, Edit, Save, RotateCcw
+} from 'lucide-react';
+
+const AVISEPeriodWorkflows = () => {
+  const [notifications, setNotifications] = useState([]);
+  const [dismissedNotifications, setDismissedNotifications] = useState([]);
+  const [notificationCenter, setNotificationCenter] = useState(false);
+  const [activeNotifications, setActiveNotifications] = useState([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMinimized, setChatMinimized] = useState(false);
+  const [currentPeriod, setCurrentPeriod] = useState('May 2025');
+  const [periodStatus, setPeriodStatus] = useState('Inactive');
+  const [periodDropdownOpen, setPeriodDropdownOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processProgress, setProcessProgress] = useState(0);
+  const [chatMessages, setChatMessages] = useState([
+    { id: 1, type: 'bot', content: 'Hello! I can help you with period management and Balance Sheet analysis.', timestamp: new Date() }
+  ]);
+  const [newMessage, setNewMessage] = useState('');
+
+  // Period management scenarios
+  const createPeriodNotification = (type, details) => {
+    const baseNotifications = {
+      'period-opening-start': {
+        type: 'progress',
+        icon: Unlock,
+        bgColor: 'bg-blue-600',
+        textColor: 'text-blue-800',
+        title: `Opening ${details.period}...`,
+        description: 'Validating data integrity and preparing period for editing',
+        action: 'View Progress',
+        category: 'Period Management',
+        priority: 2,
+        persistent: true,
+        showOnAllPages: true,
+        progress: details.progress || 0,
+        detailsContent: {
+          title: 'Period Opening Progress',
+          items: [
+            `Target period: ${details.period}`,
+            'Validating account balances...',
+            'Checking journal entry integrity...',
+            'Preparing transaction workspace...',
+            `Progress: ${details.progress || 0}%`
+          ]
+        }
+      },
+      'period-opening-success': {
+        type: 'success',
+        icon: CheckCircle,
+        bgColor: 'bg-green-500',
+        textColor: 'text-green-800',
+        title: `${details.period} opened successfully`,
+        description: 'Period is now active and ready for transactions',
+        action: 'View Summary',
+        category: 'Period Management',
+        priority: 3,
+        persistent: false,
+        showOnAllPages: true,
+        detailsContent: {
+          title: 'Period Opening Summary',
+          items: [
+            `Period: ${details.period}`,
+            'Status: Active',
+            'Total accounts: 247',
+            'Opening balance verified: ✓',
+            'Transaction workspace: Ready',
+            'Estimated completion time: 2m 34s'
+          ]
+        }
+      },
+      'period-opening-error': {
+        type: 'error',
+        icon: AlertCircle,
+        bgColor: 'bg-red-500',
+        textColor: 'text-red-800',
+        title: `Failed to open ${details.period}`,
+        description: `${details.errorCount} validation errors detected. Manual review required.`,
+        action: 'View Errors',
+        category: 'Period Management',
+        priority: 1,
+        persistent: true,
+        showOnAllPages: true,
+        detailsContent: {
+          title: 'Period Opening Errors',
+          items: [
+            `Period: ${details.period}`,
+            `Total errors: ${details.errorCount}`,
+            'Unbalanced accounts: 3',
+            'Missing journal entries: 2',
+            'Data integrity issues: 1',
+            'Required action: Contact finance team'
+          ]
+        }
+      },
+      'period-closing-start': {
+        type: 'progress',
+        icon: Lock,
+        bgColor: 'bg-orange-500',
+        textColor: 'text-orange-800',
+        title: `Closing ${details.period}...`,
+        description: 'Finalizing transactions and locking period for changes',
+        action: 'View Progress',
+        category: 'Period Management',
+        priority: 2,
+        persistent: true,
+        showOnAllPages: true,
+        progress: details.progress || 0,
+        detailsContent: {
+          title: 'Period Closing Progress',
+          items: [
+            `Target period: ${details.period}`,
+            'Finalizing pending transactions...',
+            'Running balance validation...',
+            'Generating period summary...',
+            `Progress: ${details.progress || 0}%`
+          ]
+        }
+      },
+      'period-closing-success': {
+        type: 'success',
+        icon: Lock,
+        bgColor: 'bg-green-500',
+        textColor: 'text-green-800',
+        title: `${details.period} closed successfully`,
+        description: 'Period is now locked. No further modifications allowed.',
+        action: 'View Summary',
+        category: 'Period Management',
+        priority: 3,
+        persistent: false,
+        showOnAllPages: true,
+        detailsContent: {
+          title: 'Period Closing Summary',
+          items: [
+            `Period: ${details.period}`,
+            'Status: Closed/Inactive',
+            'Total transactions: 1,247',
+            'Final balance verified: ✓',
+            'Audit trail: Generated',
+            'Closure time: 1m 18s'
+          ]
+        }
+      },
+      'ai-analysis-period': {
+        type: 'info',
+        icon: Bot,
+        bgColor: 'bg-teal-500',
+        textColor: 'text-teal-800',
+        title: `AI analysis complete for ${details.period}`,
+        description: 'Period performance insights and recommendations ready',
+        action: 'View Analysis',
+        category: 'Avise AI',
+        priority: 3,
+        persistent: false,
+        showOnAllPages: false,
+        detailsContent: {
+          title: `${details.period} AI Analysis`,
+          items: [
+            'Period performance: Above average',
+            'Cash flow trend: Positive (+12%)',
+            'Expense variance: Within budget',
+            'Risk indicators: 2 low-priority items',
+            'Recommendation: Consider early period closure'
+          ]
+        }
+      }
+    };
+
+    return baseNotifications[type];
+  };
+
+  const triggerNotification = (type, details = {}) => {
+    const notificationTemplate = createPeriodNotification(type, details);
+    if (!notificationTemplate) return;
+
+    const notification = {
+      id: Date.now(),
+      ...notificationTemplate,
+      timestamp: new Date().toISOString(),
+      viewed: false,
+      dismissed: false
+    };
+
+    setActiveNotifications(prev => {
+      const filtered = prev.filter(n => n.category !== notification.category || n.type !== notification.type);
+      return [...filtered, notification].slice(-3);
+    });
+
+    setNotifications(prev => [notification, ...prev]);
+
+    if (!notificationTemplate.persistent) {
+      setTimeout(() => {
+        setActiveNotifications(prev => prev.filter(n => n.id !== notification.id));
+      }, 8000);
+    }
+  };
+
+  const dismissNotification = (id) => {
+    setActiveNotifications(prev => prev.filter(n => n.id !== id));
+    const notification = activeNotifications.find(n => n.id === id);
+    if (notification) {
+      setDismissedNotifications(prev => [{ ...notification, dismissed: true }, ...prev]);
+    }
+  };
+
+  const viewDetails = (notification) => {
+    alert(`${notification.detailsContent.title}\n\n${notification.detailsContent.items.join('\n')}`);
+  };
+
+  // Period management workflows
+  const openPeriod = (period) => {
+    setIsProcessing(true);
+    setProcessProgress(0);
+    setPeriodDropdownOpen(false);
+    
+    // Start opening process
+    triggerNotification('period-opening-start', { period, progress: 0 });
+    
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      setProcessProgress(prev => {
+        const newProgress = prev + Math.random() * 15;
+        
+        // Update progress notification
+        if (newProgress < 100) {
+          triggerNotification('period-opening-start', { period, progress: Math.round(newProgress) });
+          return newProgress;
+        } else {
+          clearInterval(progressInterval);
+          setIsProcessing(false);
+          
+          // Simulate success or failure (80% success rate)
+          const isSuccess = Math.random() > 0.2;
+          
+          if (isSuccess) {
+            setPeriodStatus('Active');
+            setCurrentPeriod(period);
+            triggerNotification('period-opening-success', { period });
+            
+            // Trigger AI analysis after successful opening
+            setTimeout(() => {
+              triggerNotification('ai-analysis-period', { period });
+            }, 3000);
+          } else {
+            const errorCount = Math.floor(Math.random() * 5) + 1;
+            triggerNotification('period-opening-error', { period, errorCount });
+          }
+          
+          return 100;
+        }
+      });
+    }, 500);
+  };
+
+  const closePeriod = () => {
+    setIsProcessing(true);
+    setProcessProgress(0);
+    
+    // Start closing process
+    triggerNotification('period-closing-start', { period: currentPeriod, progress: 0 });
+    
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      setProcessProgress(prev => {
+        const newProgress = prev + Math.random() * 20;
+        
+        if (newProgress < 100) {
+          triggerNotification('period-closing-start', { period: currentPeriod, progress: Math.round(newProgress) });
+          return newProgress;
+        } else {
+          clearInterval(progressInterval);
+          setIsProcessing(false);
+          setPeriodStatus('Inactive');
+          triggerNotification('period-closing-success', { period: currentPeriod });
+          return 100;
+        }
+      });
+    }, 400);
+  };
+
+  // Chat interaction for period analysis
+  const sendMessage = () => {
+    if (!newMessage.trim()) return;
+    
+    const userMessage = {
+      id: Date.now(),
+      type: 'user',
+      content: newMessage,
+      timestamp: new Date()
+    };
+    
+    setChatMessages(prev => [...prev, userMessage]);
+    setNewMessage('');
+    
+    setTimeout(() => {
+      const botResponse = {
+        id: Date.now() + 1,
+        type: 'bot',
+        content: `Analyzing ${currentPeriod} data for your query...`,
+        timestamp: new Date()
+      };
+      setChatMessages(prev => [...prev, botResponse]);
+      
+      setTimeout(() => {
+        triggerNotification('ai-analysis-period', { period: currentPeriod });
+      }, 2000);
+    }, 1000);
+  };
+
+  // AVISE Header with interactive period selector
+  const AVISEHeader = () => (
+    <div className="bg-blue-600 text-white px-6 py-3 flex items-center justify-between">
+      <div className="flex items-center space-x-6">
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 bg-white rounded-sm flex items-center justify-center">
+            <div className="w-4 h-4 bg-blue-600 rounded-sm"></div>
+          </div>
+          <span className="text-xl font-semibold">AVISE</span>
+        </div>
+        
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <button
+              onClick={() => setPeriodDropdownOpen(!periodDropdownOpen)}
+              className="bg-blue-600 border border-blue-500 rounded px-3 py-1 text-sm text-white flex items-center space-x-2 hover:bg-blue-500 transition-colors"
+              disabled={isProcessing}
+            >
+              <span>{currentPeriod}</span>
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            
+            {periodDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-40">
+                <div className="py-1">
+                  {['June 2025', 'May 2025', 'April 2025', 'March 2025'].map((period) => (
+                    <button
+                      key={period}
+                      onClick={() => openPeriod(period)}
+                      className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      disabled={isProcessing}
+                    >
+                      {period}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <button className="text-blue-200 hover:text-white">
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            <button className="text-blue-200 hover:text-white">
+              <ChevronUp className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Center section - Period Status */}
+      <div className="flex items-center space-x-4">
+        <div className="text-xs">
+          <div className="text-blue-200 uppercase tracking-wide">PERIOD STATUS</div>
+          <div className="flex items-center space-x-2">
+            <span className={`font-medium ${
+              periodStatus === 'Active' ? 'text-green-300' : 'text-yellow-300'
+            }`}>
+              {periodStatus}
+            </span>
+            <div className={`w-2 h-2 rounded-full ${
+              periodStatus === 'Active' ? 'bg-green-300' : 'bg-yellow-300'
+            }`}></div>
+            {periodStatus === 'Active' && (
+              <button
+                onClick={closePeriod}
+                className="ml-2 text-blue-200 hover:text-white"
+                disabled={isProcessing}
+                title="Close Period"
+              >
+                <Lock className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right section */}
+      <div className="flex items-center space-x-3">
+        <button 
+          onClick={() => {
+            setChatOpen(!chatOpen);
+            if (chatOpen) setChatMinimized(false);
+          }}
+          className="relative p-2 text-blue-200 hover:text-white hover:bg-blue-500 rounded transition-colors"
+        >
+          <MessageCircle className="w-5 h-5" />
+          {chatMessages.filter(m => m.type === 'bot').length > 1 && (
+            <span className="absolute -top-1 -right-1 bg-teal-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+              {chatMessages.filter(m => m.type === 'bot').length - 1}
+            </span>
+          )}
+        </button>
+
+        <button 
+          onClick={() => setNotificationCenter(!notificationCenter)}
+          className="relative p-2 text-blue-200 hover:text-white hover:bg-blue-500 rounded transition-colors"
+        >
+          {(notifications.length > 0 || dismissedNotifications.length > 0) ? 
+            <BellRing className="w-5 h-5" /> : <Bell className="w-5 h-5" />
+          }
+          {(notifications.length > 0 || dismissedNotifications.length > 0) && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+              {notifications.length + dismissedNotifications.length}
+            </span>
+          )}
+        </button>
+
+        <div className="flex items-center space-x-2 bg-blue-500 rounded px-3 py-1">
+          <div className="w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center text-xs font-semibold">
+            EM
+          </div>
+          <span className="text-sm font-medium">Emanuel Mustea</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Company/Flow selector
+  const FlowSelector = () => (
+    <div className="bg-gray-50 border-b border-gray-200 px-6 py-3">
+      <div className="flex items-center">
+        <button className="text-gray-400 mr-3">
+          <ChevronDown className="w-4 h-4" />
+        </button>
+        <select className="bg-white border border-gray-300 rounded px-3 py-2 text-sm">
+          <option>12-02-flow-france</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  // Sidebar
+  const Sidebar = () => (
+    <div className="w-60 bg-white border-r border-gray-200">
+      <div className="p-4 space-y-1">
+        {[
+          { icon: BarChart3, label: 'Balance Sheet', active: true },
+          { icon: PieChart, label: 'Income Statement', active: false },
+          { icon: TrendingUp, label: 'Flux Analysis', active: false },
+          { icon: FileText, label: 'Tasks', active: false },
+          { icon: RefreshCw, label: 'Reconciliations', active: false },
+          { icon: Calendar, label: 'Schedules', active: false },
+          { icon: DollarSign, label: 'Revenue', active: false },
+          { icon: Users, label: 'Accruals', active: false },
+          { icon: FileText, label: 'Entries', active: false },
+          { icon: Archive, label: 'Transactions', active: false },
+          { icon: Archive, label: 'File Library', active: false },
+          { icon: Settings, label: 'Settings', active: false },
+          { icon: HelpCircle, label: 'Help', active: false }
+        ].map((item, index) => (
+          <div 
+            key={index} 
+            className={`flex items-center space-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+              item.active 
+                ? 'bg-blue-600 text-white' 
+                : 'text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <item.icon className={`w-4 h-4 ${item.active ? 'text-white' : 'text-gray-500'}`} />
+            <span className="text-sm font-medium">{item.label}</span>
+          </div>
+        ))}
+      </div>
+      
+      <div className="absolute bottom-4 left-4 right-4">
+        <div className="bg-gray-50 rounded-lg p-3 mb-3">
+          <div className="flex items-center space-x-2 text-teal-600 mb-1">
+            <Zap className="w-4 h-4" />
+            <span className="text-sm font-medium">Avise AI</span>
+            <ChevronRight className="w-3 h-3" />
+          </div>
+        </div>
+        
+        <div className="border-t border-gray-200 pt-3">
+          <div className="flex items-center space-x-2 text-gray-600">
+            <RefreshCw className="w-4 h-4" />
+            <div className="flex-1">
+              <div className="text-sm font-medium">NetSuite Sync</div>
+              <div className="text-xs text-green-600">Connected</div>
+            </div>
+            <button className="w-8 h-8 border border-gray-300 rounded flex items-center justify-center hover:bg-gray-50">
+              <RefreshCw className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Main content area
+  const MainContent = () => (
+    <div className="flex-1 bg-gray-50 p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-semibold text-gray-900">Balance Sheet</h1>
+        <button className="flex items-center space-x-2 text-blue-600 hover:text-blue-700">
+          <Eye className="w-4 h-4" />
+          <span className="text-sm font-medium">Open Report</span>
+        </button>
+      </div>
+
+      {/* Status Banner */}
+      <div className={`rounded-lg border p-4 mb-6 ${
+        periodStatus === 'Active' 
+          ? 'bg-green-50 border-green-200' 
+          : 'bg-yellow-50 border-yellow-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            {periodStatus === 'Active' ? (
+              <Unlock className="w-5 h-5 text-green-600" />
+            ) : (
+              <Lock className="w-5 h-5 text-yellow-600" />
+            )}
+            <div>
+              <h3 className={`font-medium ${
+                periodStatus === 'Active' ? 'text-green-800' : 'text-yellow-800'
+              }`}>
+                Period {currentPeriod} is {periodStatus}
+              </h3>
+              <p className={`text-sm ${
+                periodStatus === 'Active' ? 'text-green-600' : 'text-yellow-600'
+              }`}>
+                {periodStatus === 'Active' 
+                  ? 'You can edit transactions and make adjustments'
+                  : 'Period is locked - no modifications allowed'
+                }
+              </p>
+            </div>
+          </div>
+          {isProcessing && (
+            <div className="flex items-center space-x-2">
+              <Loader className="w-4 h-4 animate-spin text-blue-600" />
+              <span className="text-sm text-blue-600">Processing... {Math.round(processProgress)}%</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Workflow Instructions */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <h3 className="font-medium text-blue-800 mb-2">Interactive Workflow Demo</h3>
+        <div className="text-sm text-blue-700 space-y-1">
+          <p><strong>1. Period Opening:</strong> Click period dropdown → Select different period → Watch opening process</p>
+          <p><strong>2. Period Closing:</strong> Click lock icon next to Active status → Watch closing process</p>
+          <p><strong>3. AI Analysis:</strong> Type in chat → AI analyzes period → Notification with insights</p>
+          <p><strong>4. Notifications:</strong> Dismiss with X → Check bell for history → View details button</p>
+        </div>
+      </div>
+
+      {/* Balance Sheet Table (simplified for demo) */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-4">
+              <span className="text-lg font-medium text-gray-900">Assets</span>
+              <button className="text-gray-400 hover:text-gray-600">
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex space-x-8">
+              <span className="text-sm font-medium text-gray-600">Balance</span>
+              <span className="text-sm font-medium text-gray-600">Tasks</span>
+            </div>
+          </div>
+
+          <div className="ml-4 space-y-3">
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-gray-700">Cash and Bank</span>
+              <div className="flex items-center space-x-8">
+                <span className="text-sm text-blue-600 font-medium w-24 text-right">£12,067.00</span>
+                <div className="w-12"></div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-sm text-gray-700">Accounts Receivable</span>
+              <div className="flex items-center space-x-8">
+                <span className="text-sm text-blue-600 font-medium w-24 text-right">£4,320.00</span>
+                <div className="w-12"></div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between py-2 border-t border-gray-200 pt-2">
+              <span className="text-sm font-medium text-gray-900">Total Current Assets</span>
+              <div className="flex items-center space-x-8">
+                <span className="text-sm font-bold text-gray-900 w-24 text-right">£16,387.00</span>
+                <div className="w-12"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Floating Notifications
+  const FloatingNotifications = () => (
+    <div className="fixed top-24 right-6 z-50 space-y-3">
+      {activeNotifications.map((notification, index) => {
+        const Icon = notification.icon;
+        return (
+          <div 
+            key={notification.id}
+            className="transform transition-all duration-500 ease-out bg-white rounded-lg shadow-xl border border-gray-200 p-4 max-w-sm"
+            style={{ 
+              transform: `translateY(${index * 10}px)`,
+              zIndex: 50 - index 
+            }}
+          >
+            <div className="flex items-start space-x-3">
+              <div className={`${notification.bgColor} rounded-full p-2 flex-shrink-0`}>
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <p className="text-gray-900 text-sm font-medium mb-1">
+                      {notification.title}
+                    </p>
+                    <p className="text-gray-600 text-xs mb-3">
+                      {notification.description}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => dismissNotification(notification.id)}
+                    className="text-gray-400 hover:text-gray-600 ml-2 flex-shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={() => viewDetails(notification)}
+                    className={`${notification.bgColor} text-white px-3 py-1 rounded-md text-xs font-medium hover:opacity-90 transition-opacity flex items-center space-x-1`}
+                  >
+                    <span>{notification.action}</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                  {notification.type === 'progress' && (
+                    <button className="border border-gray-300 text-gray-700 px-3 py-1 rounded-md text-xs font-medium hover:bg-gray-50">
+                      <Pause className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {notification.type === 'progress' && notification.progress !== undefined && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                  <span>Progress</span>
+                  <span>{notification.progress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      notification.bgColor.replace('bg-', 'bg-')
+                    }`} 
+                    style={{ width: `${notification.progress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // Notification Center
+  const NotificationCenter = () => {
+    if (!notificationCenter) return null;
+
+    const allNotifications = [...notifications, ...dismissedNotifications]
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    return (
+      <div className="fixed top-16 right-6 w-96 max-h-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+        <div className="p-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Notifications</h3>
+            <button 
+              onClick={() => setNotificationCenter(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="max-h-80 overflow-y-auto">
+          {allNotifications.length === 0 ? (
+            <div className="p-6 text-center text-gray-500">
+              <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No notifications</p>
+            </div>
+          ) : (
+            allNotifications.map((notification) => {
+              const Icon = notification.icon;
+              return (
+                <div key={notification.id} className={`p-3 border-b border-gray-100 hover:bg-gray-50 ${notification.dismissed ? 'opacity-75' : ''}`}>
+                  <div className="flex items-start space-x-3">
+                    <div className={`${notification.bgColor} rounded-full p-1.5 flex-shrink-0`}>
+                      <Icon className="w-3 h-3 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 mb-1">
+                        {notification.title}
+                      </p>
+                      <p className="text-xs text-gray-600 mb-2">
+                        {notification.description}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">
+                          {new Date(notification.timestamp).toLocaleTimeString()}
+                        </span>
+                        <button 
+                          onClick={() => viewDetails(notification)}
+                          className={`${notification.bgColor} text-white px-2 py-1 rounded text-xs font-medium hover:opacity-90`}
+                        >
+                          {notification.action}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Chat Window
+  const ChatWindow = () => {
+    if (!chatOpen) return null;
+
+    return (
+      <div className={`fixed bottom-0 right-6 w-80 bg-white border border-gray-200 rounded-t-lg shadow-xl z-50 transition-all duration-300 ${
+        chatMinimized ? 'h-12' : 'h-96'
+      }`}>
+        <div className="p-3 border-b border-gray-200 bg-teal-50 rounded-t-lg flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Bot className="w-5 h-5 text-teal-600" />
+            <h3 className="font-semibold text-gray-900">Avise AI Assistant</h3>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={() => setChatMinimized(!chatMinimized)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              {chatMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+            </button>
+            <button 
+              onClick={() => setChatOpen(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {!chatMinimized && (
+          <>
+            <div className="h-80 overflow-y-auto p-3 space-y-3">
+              {chatMessages.map((message) => (
+                <div key={message.id} className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-xs p-3 rounded-lg ${
+                    message.type === 'user' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-teal-50 text-gray-900 border border-teal-200'
+                  }`}>
+                    <p className="text-sm">{message.content}</p>
+                    <p className={`text-xs mt-1 ${
+                      message.type === 'user' ? 'text-blue-100' : 'text-gray-500'
+                    }`}>
+                      {message.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 border-t border-gray-200">
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder="Ask about period analysis..."
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+                <button 
+                  onClick={sendMessage}
+                  className="bg-teal-500 text-white p-2 rounded-md hover:bg-teal-600 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AVISEHeader />
+      <FlowSelector />
+      
+      <div className="flex h-screen">
+        <Sidebar />
+        <MainContent />
+      </div>
+
+      {/* Notification Components */}
+      <FloatingNotifications />
+      <NotificationCenter />
+      <ChatWindow />
+    </div>
+  );
+};
+
+export default AVISEPeriodWorkflows;
